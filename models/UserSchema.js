@@ -1,6 +1,6 @@
-const mongoose = require("mongoose");
-const bcrypt = require("bcrypt");
-const { softDeletePlugin } = require("../middleware/softDelete");
+const mongoose = require("mongoose")
+const bcrypt = require("bcrypt")
+const { softDeletePlugin } = require("../middleware/softDelete")
 
 const userSchema = new mongoose.Schema(
   {
@@ -43,19 +43,16 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    // 🔹 0 = inactive, 1 = active
     status: {
       type: Boolean,
       default: 1,
     },
   },
-  {
-    timestamps: true,
-  }
-);
+  { timestamps: true },
+)
 
-// 🔹 Apply soft delete plugin
-userSchema.plugin(softDeletePlugin);
-// 🔹 Model export
-const User = mongoose.model("users", userSchema);
-module.exports = User;
+userSchema.plugin(softDeletePlugin)
+
+const User = mongoose.model("users", userSchema)
+
+module.exports = User

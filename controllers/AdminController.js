@@ -111,6 +111,114 @@ exports.getAdminProfile = async (req, res) => {
   }
 }
 
+// Update Admin Profile
+exports.updateAdminProfile = async (req, res) => {
+  try {
+    if (!req.userData?.is_admin) {
+      return response(res, false, "Access denied. Admin only")
+    }
+
+    const { fullName, phone, profilePic } = req.body
+    const adminId = req.userData._id
+
+    // Validate input
+    if (fullName && fullName.trim().length === 0) {
+      return response(res, false, "Full name cannot be empty")
+    }
+
+    if (phone) {
+      const phoneRegex = /^\+?[0-9]{7,15}$/
+      if (!phoneRegex.test(phone)) {
+        return response(res, false, "Please provide a valid phone number")
+      }
+    }
+
+    // Check if phone is already used by another admin
+    if (phone && phone !== req.userData.phone) {
+      const existingPhone = await User.findOne({ phone, _id: { $ne: adminId } })
+      if (existingPhone) {
+        return response(res, false, "Phone number already in use")
+      }
+    }
+
+    // Update admin profile
+    const updateData = {}
+    if (fullName) updateData.fullName = fullName
+    if (phone) updateData.phone = phone
+    if (profilePic) updateData.profilePic = profilePic
+
+    const updatedAdmin = await User.findByIdAndUpdate(adminId, updateData, { new: true })
+
+    return response(res, true, "Admin profile updated successfully", formatUser(updatedAdmin))
+  } catch (error) {
+    return response(res, false, error.message)
+  }
+}
+
+// Change Admin Password
+exports.changeAdminPassword = async (req, res) => {
+  try {
+    if (!req.userData?.is_admin) {
+      return response(res, false, "Access denied. Admin only")
+    }
+
+    const { currentPassword, newPassword, confirmPassword } = req.body
+    const adminId = req.userData._id
+
+    // Validate input
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return response(res, false, "All password fields are required")
+    }
+
+    if (newPassword !== confirmPassword) {
+      return response(res, false, "New password and confirm password do not match")
+    }
+
+    if (newPassword.length < 8) {
+      return response(res, false, "New password must be at least 8 characters long")
+    }
+
+    // Verify current password
+    const admin = await User.findById(adminId)
+    const isMatch = await bcrypt.compare(currentPassword, admin.password)
+    if (!isMatch) {
+      return response(res, false, "Current password is incorrect")
+    }
+
+    // Hash and update new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10)
+    await User.findByIdAndUpdate(adminId, { password: hashedPassword })
+
+    return response(res, true, "Password changed successfully")
+  } catch (error) {
+    return response(res, false, error.message)
+  }
+}
+
+// Get Admin Dashboard Stats
+exports.getAdminStats = async (req, res) => {
+  try {
+    if (!req.userData?.is_admin) {
+      return response(res, false, "Access denied. Admin only")
+    }
+
+    const totalUsers = await User.countDocuments({ is_admin: false })
+    const activeUsers = await User.countDocuments({ is_admin: false, status: true })
+    const inactiveUsers = await User.countDocuments({ is_admin: false, status: false })
+    const totalAdmins = await User.countDocuments({ is_admin: true })
+
+    return response(res, true, "Admin stats retrieved", {
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      totalAdmins,
+    })
+  } catch (error) {
+    return response(res, false, error.message)
+  }
+}
+
+
 // Get All Users (Admin only)
 exports.getAllUsers = async (req, res) => {
   try {
