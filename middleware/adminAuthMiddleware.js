@@ -46,6 +46,7 @@ const adminAuthMiddleware = async (req, res, next) => {
   } catch (error) {
     res.status(401).json({
       success: false,
+      status: 3,
       message: error.name === "TokenExpiredError" ? "Token expired." : "Invalid token.",
     })
   }

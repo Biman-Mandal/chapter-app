@@ -55,6 +55,7 @@ const authMiddleware = async (req, res, next) => {
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
+        status: 3,
         message: 'Invalid token.'
       });
     } else if (error.name === 'TokenExpiredError') {
