@@ -25,4 +25,7 @@ router.put(
   userController.updateProfile
 );
 
+router.post("/question/submit", authMiddleware, userController.submitResponse);
+router.get("/question/me", authMiddleware, userController.myResponses);
+
 module.exports = router;

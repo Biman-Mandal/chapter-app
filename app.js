@@ -21,7 +21,7 @@ app.use(cors());
 // -------------------- View Engine --------------------
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "jade");
-
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // -------------------- Middleware --------------------
 app.use(logger("dev"));
 app.use(express.json());
@@ -42,7 +42,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/admin", adminRouter)
 app.use("/api/admin", adminUserRouter)
 app.use("/api/admin/categories", adminCategoryRouter)
-app.use("/api/admin/questions", adminCategoryRouter)
+app.use("/api/admin/questions", adminQuestionRouter)
 // -------------------- 404 Handler --------------------
 app.use((req, res, next) => {
   console.warn(`[404] Route not found: ${req.method} ${req.originalUrl}`);

@@ -2,20 +2,20 @@ const express = require("express");
 const router = express.Router();
 const questionController = require("../../controllers/admin/QuestionController");
 const adminAuthMiddleware = require("../../middleware/adminAuthMiddleware");
-// Note: For submitResponse you may want a user auth middleware (e.g., authMiddleware).
-// If you have a general auth middleware, replace below or add both as needed.
+const authMiddleware = require("../../middleware/authMiddleware"); // user auth for "my" endpoints
+const upload = require("../../middleware/uploadMiddleware");
 
+// Questions CRUD (existing)
 router.get("/list", adminAuthMiddleware, questionController.questionList);
 router.get("/:id", adminAuthMiddleware, questionController.getQuestion);
-router.post("/create", adminAuthMiddleware, questionController.createQuestion);
-router.put("/update/:id", adminAuthMiddleware, questionController.updateQuestion);
+router.post("/create", adminAuthMiddleware, upload.array("optionFiles"), questionController.createQuestion);
+router.put("/update/:id", adminAuthMiddleware, upload.array("optionFiles"), questionController.updateQuestion);
 router.delete("/delete/:id", adminAuthMiddleware, questionController.deleteQuestion);
 
-// Admin-only: list responses
-router.get("/responses/list", adminAuthMiddleware, questionController.listResponses);
-
-// Public or authenticated users submit responses.
-// If you have a user auth middleware, replace the anonymous handler with it.
-router.post("/response", questionController.submitResponse);
+// Responses
+router.get("/responses/list", adminAuthMiddleware, questionController.listResponses); // admin list with filters
+router.get("/responses/:id", adminAuthMiddleware, questionController.getResponseById); // admin fetch single
+router.get("/responses/user", adminAuthMiddleware, questionController.responsesByUser); // admin fetch by user (query userId)
+router.delete("/responses/:id", adminAuthMiddleware, questionController.deleteResponse); // admin delete response
 
 module.exports = router;

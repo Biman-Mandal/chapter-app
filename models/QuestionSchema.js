@@ -2,9 +2,10 @@ const mongoose = require("mongoose");
 
 const OptionSchema = new mongoose.Schema(
   {
-    id: { type: String }, // for frontend mapping (uuid)
+    id: { type: String }, // frontend uuid
     text: { type: String, default: "" },
     value: { type: String, default: "" },
+    // media fields now stored as server paths (relative URL)
     image: { type: String, default: "" },
     video: { type: String, default: "" },
     order: { type: Number, default: 0 },
@@ -16,6 +17,7 @@ const OptionSchema = new mongoose.Schema(
 const QuestionSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
+    description: { type: String, default: "" }, // newly added description field
     // types: single, multiple, dropdown, grid, text, image, video
     type: {
       type: String,
