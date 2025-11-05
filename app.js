@@ -15,6 +15,7 @@ const adminRouter = require("./routes/admin/admin")
 const adminUserRouter = require("./routes/admin/user")
 const adminCategoryRouter = require("./routes/admin/categoryRoutes")
 const adminQuestionRouter = require("./routes/admin/questionRoutes")
+const subscriptionRouter = require("./routes/admin/subscriptions")
 const app = express();
 app.use(cors());
 
@@ -43,6 +44,7 @@ app.use("/api/admin", adminRouter)
 app.use("/api/admin", adminUserRouter)
 app.use("/api/admin/categories", adminCategoryRouter)
 app.use("/api/admin/questions", adminQuestionRouter)
+app.use("/api/admin/subscriptions", subscriptionRouter)
 // -------------------- 404 Handler --------------------
 app.use((req, res, next) => {
   console.warn(`[404] Route not found: ${req.method} ${req.originalUrl}`);
