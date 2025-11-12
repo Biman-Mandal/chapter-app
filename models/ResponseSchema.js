@@ -14,7 +14,7 @@ const AnswerItemSchema = new mongoose.Schema(
 
 const ResponseSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false }, // optional if guest allowed
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "users", required: false }, // optional if guest allowed
     answers: { type: [AnswerItemSchema], required: true, default: [] },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} }, // device, ip, session id etc.
   },

@@ -150,21 +150,6 @@ exports.deleteQuestion = async (req, res) => {
   }
 };
 
-// -------------------- LIST RESPONSES (ADMIN) --------------------
-exports.listResponses = async (req, res) => {
-  try {
-    const { userId } = req.query;
-    const q = {};
-    if (userId) q.userId = userId;
-
-    const responses = await Response.find(q).sort({ createdAt: -1 }).limit(100);
-    return response(res, true, "Responses fetched", responses);
-  } catch (error) {
-    return response(res, false, error.message);
-  }
-};
-
-
 // -------------------- LIST QUESTIONS --------------------
 // (kept as before; omitted here for brevity if already present)
 
@@ -189,7 +174,7 @@ exports.listResponses = async (req, res) => {
     }
 
     const skip = (Math.max(1, Number(page)) - 1) * Number(limit);
-    const responses = await Response.find(q).sort({ createdAt: -1 }).skip(skip).limit(Number(limit));
+    const responses = await Response.find(q).sort({ createdAt: -1 }).populate('userId').skip(skip).limit(Number(limit));
     const total = await Response.countDocuments(q);
 
     return response(res, true, "Responses fetched", { items: responses, total });
