@@ -1,5 +1,7 @@
 const Book = require("../../models/BookSchema");
+const Chapter = require("../../models/ChapterSchema");
 const { response } = require("../../utils/response");
+const path = require("path");
 
 // helper to map uploaded files from req.files (fields)
 const mapFiles = (bookPayload = {}, files = {}) => {
@@ -31,7 +33,17 @@ exports.bookList = async (req, res) => {
 
     // return all matching books sorted by createdAt desc
     const books = await Book.find(query).sort({ createdAt: -1 });
-    return response(res, true, "Book list fetched successfully", books);
+
+    // fetch chapter counts for each book in parallel
+    const counts = await Promise.all(books.map((b) => Chapter.countDocuments({ bookId: b._id })));
+
+    const result = books.map((b, idx) => {
+      const obj = b.toObject();
+      obj.chapterCount = counts[idx] || 0;
+      return obj;
+    });
+
+    return response(res, true, "Book list fetched successfully", result);
   } catch (error) {
     return response(res, false, error.message);
   }
@@ -51,9 +63,16 @@ exports.listAuthors = async (req, res) => {
 exports.getBook = async (req, res) => {
   try {
     const { id } = req.params;
-    const book = await Book.findById(id);
+    const book = await Book.findById(id).populate("categories");
     if (!book) return response(res, false, "Book not found");
-    return response(res, true, "Book fetched", book);
+
+    // include chapters list for details
+    const chapters = await Chapter.find({ bookId: book._id }).sort({ createdAt: -1 });
+    const obj = book.toObject();
+    obj.chapters = chapters;
+    obj.chapterCount = chapters.length;
+
+    return response(res, true, "Book fetched", obj);
   } catch (error) {
     return response(res, false, error.message);
   }
@@ -63,6 +82,16 @@ exports.getBook = async (req, res) => {
 exports.createBook = async (req, res) => {
   try {
     const payload = req.body || {};
+
+    // parse categories (expect array of ids)
+    let categories = [];
+    if (payload.categories) {
+      try {
+        categories = typeof payload.categories === "string" ? JSON.parse(payload.categories) : payload.categories;
+      } catch (e) {
+        categories = payload.categories || [];
+      }
+    }
 
     // parse tags if present
     let tags = [];
@@ -86,6 +115,7 @@ exports.createBook = async (req, res) => {
       coverImage: mapped.coverImage || payload.coverImage || "",
       backgroundImage: mapped.backgroundImage || payload.backgroundImage || "",
       tags,
+      categories,
       meta: payload.meta ? (typeof payload.meta === "string" ? JSON.parse(payload.meta) : payload.meta) : {},
       createdBy: req.user ? req.user._id : undefined,
     });
@@ -104,6 +134,16 @@ exports.updateBook = async (req, res) => {
 
     const book = await Book.findById(id);
     if (!book) return response(res, false, "Book not found");
+
+    // parse categories (if provided)
+    let categories = book.categories || [];
+    if (typeof payload.categories !== "undefined") {
+      try {
+        categories = typeof payload.categories === "string" ? JSON.parse(payload.categories) : payload.categories;
+      } catch (e) {
+        categories = payload.categories || [];
+      }
+    }
 
     // parse tags if present
     let tags = book.tags || [];
@@ -126,6 +166,7 @@ exports.updateBook = async (req, res) => {
     book.coverImage = mapped.coverImage || (typeof payload.coverImage !== "undefined" ? payload.coverImage : book.coverImage);
     book.backgroundImage = mapped.backgroundImage || (typeof payload.backgroundImage !== "undefined" ? payload.backgroundImage : book.backgroundImage);
     book.tags = tags;
+    book.categories = categories;
     book.meta = payload.meta ? (typeof payload.meta === "string" ? JSON.parse(payload.meta) : payload.meta) : book.meta;
     book.active = typeof payload.active !== "undefined" ? (payload.active === "true" || payload.active === true) : book.active;
 

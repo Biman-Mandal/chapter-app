@@ -10,6 +10,8 @@ const BookSchema = new mongoose.Schema(
     coverImage: { type: String, default: "" }, // stored as relative server path e.g. /uploads/books/...
     backgroundImage: { type: String, default: "" },
     tags: { type: [String], default: [] },
+    // categories stored as ObjectId references to categories collection
+    categories: [{ type: mongoose.Schema.Types.ObjectId, ref: "categories" }],
     meta: { type: mongoose.Schema.Types.Mixed, default: {} },
     active: { type: Boolean, default: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },

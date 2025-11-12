@@ -18,6 +18,7 @@ const adminQuestionRouter = require("./routes/admin/questionRoutes")
 const subscriptionRouter = require("./routes/admin/subscriptions")
 const tagRoutes = require("./routes/admin/tagRoutes")
 const bookRoutes = require("./routes/admin/bookRoutes")
+const chapterRoutes = require("./routes/admin/chapterRoutes")
 const app = express();
 app.use(cors());
 
@@ -49,6 +50,7 @@ app.use("/api/admin/questions", adminQuestionRouter)
 app.use("/api/admin/subscriptions", subscriptionRouter)
 app.use("/api/admin/tags", tagRoutes)
 app.use("/api/admin/books", bookRoutes)
+app.use("/api/admin/chapters", chapterRoutes)
 // -------------------- 404 Handler --------------------
 app.use((req, res, next) => {
   console.warn(`[404] Route not found: ${req.method} ${req.originalUrl}`);
