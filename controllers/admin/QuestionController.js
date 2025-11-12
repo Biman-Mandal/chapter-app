@@ -16,10 +16,10 @@ const attachFilesToOptions = (options = [], files = []) => {
     if (file) {
       // determine if image or video by mimetype
       if (file.mimetype.startsWith("image/")) {
-        newOpt.image = `/uploads/questions/${file.filename}`;
+        newOpt.image = `/uploads/${file.filename}`;
         newOpt.video = newOpt.video || "";
       } else if (file.mimetype.startsWith("video/")) {
-        newOpt.video = `/uploads/questions/${file.filename}`;
+        newOpt.video = `/uploads/${file.filename}`;
         newOpt.image = newOpt.image || "";
       }
     }
