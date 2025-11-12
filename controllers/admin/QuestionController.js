@@ -2,6 +2,7 @@ const Question = require("../../models/QuestionSchema");
 const Response = require("../../models/ResponseSchema");
 const { response } = require("../../utils/response");
 const path = require("path");
+const mongoose = require("mongoose");
 
 // helper: map uploaded files to options (expects files array in order matching options array)
 const attachFilesToOptions = (options = [], files = []) => {
@@ -57,15 +58,12 @@ exports.getQuestion = async (req, res) => {
 // -------------------- CREATE QUESTION --------------------
 exports.createQuestion = async (req, res) => {
   try {
-    // If uploaded files exist (multer), they are in req.files (array)
-    // We expect a JSON string for options in req.body.options when using multipart/form-data
     const payload = req.body || {};
     let options = [];
     if (payload.options) {
       try {
         options = typeof payload.options === "string" ? JSON.parse(payload.options) : payload.options;
       } catch (err) {
-        // ignore and treat as empty
         options = [];
       }
     } else {
@@ -75,6 +73,16 @@ exports.createQuestion = async (req, res) => {
     // attach uploaded files (if any)
     const files = req.files || [];
     const finalOptions = attachFilesToOptions(options, files);
+
+    // parse tags if present
+    let tags = [];
+    if (payload.tags) {
+      try {
+        tags = typeof payload.tags === "string" ? JSON.parse(payload.tags) : payload.tags;
+      } catch (e) {
+        tags = payload.tags || [];
+      }
+    }
 
     const q = await Question.create({
       title: payload.title,
@@ -86,6 +94,7 @@ exports.createQuestion = async (req, res) => {
       order: payload.order ? Number(payload.order) : 0,
       meta: payload.meta ? (typeof payload.meta === "string" ? JSON.parse(payload.meta) : payload.meta) : {},
       createdBy: req.user ? req.user._id : undefined,
+      tags,
     });
 
     return response(res, true, "Question created successfully", q);
@@ -119,6 +128,16 @@ exports.updateQuestion = async (req, res) => {
     const files = req.files || [];
     const finalOptions = attachFilesToOptions(options, files);
 
+    // parse tags if present
+    let tags = question.tags || [];
+    if (typeof payload.tags !== "undefined") {
+      try {
+        tags = typeof payload.tags === "string" ? JSON.parse(payload.tags) : payload.tags;
+      } catch (e) {
+        tags = payload.tags || [];
+      }
+    }
+
     question.title = payload.title || question.title;
     question.description = typeof payload.description !== "undefined" ? payload.description : question.description;
     question.type = payload.type || question.type;
@@ -128,6 +147,7 @@ exports.updateQuestion = async (req, res) => {
     question.order = typeof payload.order !== "undefined" ? Number(payload.order) : question.order;
     question.meta = payload.meta ? (typeof payload.meta === "string" ? JSON.parse(payload.meta) : payload.meta) : question.meta;
     question.active = typeof payload.active !== "undefined" ? (payload.active === "true" || payload.active === true) : question.active;
+    question.tags = tags;
 
     await question.save();
     return response(res, true, "Question updated successfully", question);
@@ -150,20 +170,16 @@ exports.deleteQuestion = async (req, res) => {
   }
 };
 
-// -------------------- LIST QUESTIONS --------------------
-// (kept as before; omitted here for brevity if already present)
+// -------------------- RESPONSES & other handlers remain unchanged (omitted for brevity) --------------------
 
-// -------------------- LIST RESPONSES (ADMIN) --------------------
 exports.listResponses = async (req, res) => {
   try {
     const { userId, page = 1, limit = 50, search } = req.query;
     const q = {};
     if (userId) {
-      // allow either ObjectId or string match
       if (mongoose.Types.ObjectId.isValid(userId)) q.userId = mongoose.Types.ObjectId(userId);
       else q["metadata.userIdentifier"] = { $regex: userId, $options: "i" };
     }
-    // simple text search across metadata or answers text/values
     if (search) {
       q.$or = [
         { "metadata.ip": { $regex: search, $options: "i" } },
@@ -183,7 +199,6 @@ exports.listResponses = async (req, res) => {
   }
 };
 
-// -------------------- GET SINGLE RESPONSE (ADMIN) --------------------
 exports.getResponseById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -196,7 +211,6 @@ exports.getResponseById = async (req, res) => {
   }
 };
 
-// -------------------- GET RESPONSES BY USER (ADMIN) --------------------
 exports.responsesByUser = async (req, res) => {
   try {
     const { userId, page = 1, limit = 50 } = req.query;
@@ -216,10 +230,8 @@ exports.responsesByUser = async (req, res) => {
   }
 };
 
-// -------------------- GET MY RESPONSES (AUTHENTICATED USER) --------------------
 exports.myResponses = async (req, res) => {
   try {
-    // ensure user is available from auth middleware
     const user = req.user;
     if (!user) return response(res, false, "Unauthorized", null, 401);
 
@@ -235,7 +247,6 @@ exports.myResponses = async (req, res) => {
   }
 };
 
-// -------------------- DELETE RESPONSE (ADMIN) --------------------
 exports.deleteResponse = async (req, res) => {
   try {
     const { id } = req.params;

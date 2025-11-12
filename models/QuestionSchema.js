@@ -17,7 +17,7 @@ const OptionSchema = new mongoose.Schema(
 const QuestionSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
-    description: { type: String, default: "" }, // newly added description field
+    description: { type: String, default: "" },
     // types: single, multiple, dropdown, grid, text, image, video
     type: {
       type: String,
@@ -27,11 +27,13 @@ const QuestionSchema = new mongoose.Schema(
     },
     options: { type: [OptionSchema], default: [] },
     required: { type: Boolean, default: false },
-    section: { type: String, default: "" }, // e.g., "Interests", "Personality"
+    section: { type: String, default: "" },
     order: { type: Number, default: 0 },
     meta: { type: mongoose.Schema.Types.Mixed, default: {} },
     active: { type: Boolean, default: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    // tags: store as array of strings (tag names). This keeps backend simple to render without populate.
+    tags: { type: [String], default: [] },
   },
   { timestamps: true }
 );
