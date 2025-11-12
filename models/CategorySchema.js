@@ -14,11 +14,7 @@ const categorySchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
-    parentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "categories",
-      default: null, // null means it's a parent category
-    },
+    // Removed parentId - categories are now flat (no hierarchy)
     description: {
       type: String,
       default: "",
@@ -35,10 +31,10 @@ const categorySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// ✅ Soft delete plugin
+// Soft delete plugin
 categorySchema.plugin(softDeletePlugin);
 
-// ✅ Pre-save slug generator
+// Pre-save slug generator
 categorySchema.pre("save", function (next) {
   if (!this.slug && this.name) {
     this.slug = this.name.toLowerCase().replace(/ /g, "-");

@@ -1,6 +1,6 @@
-const mongoose = require("mongoose")
-const bcrypt = require("bcrypt")
-const { softDeletePlugin } = require("../middleware/softDelete")
+const mongoose = require("mongoose");
+const bcrypt = require("bcrypt");
+const { softDeletePlugin } = require("../middleware/softDelete");
 
 const userSchema = new mongoose.Schema(
   {
@@ -44,15 +44,20 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
     status: {
+      // keep boolean for internal usage; controller will map to 1/0
       type: Boolean,
-      default: 1,
+      default: true,
+    },
+    lastLogin: {
+      type: Date,
+      default: null,
     },
   },
-  { timestamps: true },
-)
+  { timestamps: true }
+);
 
-userSchema.plugin(softDeletePlugin)
+userSchema.plugin(softDeletePlugin);
 
-const User = mongoose.model("users", userSchema)
+const User = mongoose.model("users", userSchema);
 
-module.exports = User
+module.exports = User;

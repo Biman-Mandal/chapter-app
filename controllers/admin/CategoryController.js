@@ -5,7 +5,7 @@ const formatCategory = (cat = {}) => ({
   id: cat._id?.toString() || "",
   name: cat.name || "",
   slug: cat.slug || "",
-  parentId: cat.parentId || null,
+  // parentId removed
   description: cat.description || "",
   image: cat.image || "",
   status: cat.status ? 1 : 0,
@@ -16,12 +16,11 @@ const formatCategory = (cat = {}) => ({
 // -------------------- CATEGORY LIST --------------------
 exports.categoryList = async (req, res) => {
   try {
-    const { search, status, parentId } = req.query;
+    const { search, status } = req.query;
 
     const query = {};
     if (search) query.name = { $regex: search, $options: "i" };
     if (typeof status !== "undefined") query.status = status;
-    // query.parentId = parentId || null;
 
     const categories = await Category.find(query).sort({ createdAt: -1 });
     const formatted = categories.map((c) => formatCategory(c));
@@ -35,7 +34,7 @@ exports.categoryList = async (req, res) => {
 // -------------------- CREATE CATEGORY --------------------
 exports.createCategory = async (req, res) => {
   try {
-    const { name, description, parentId, image } = req.body;
+    const { name, description, image } = req.body;
 
     const existing = await Category.findOne({ name: name.trim() });
     if (existing) return response(res, false, "Category name already exists");
@@ -43,7 +42,6 @@ exports.createCategory = async (req, res) => {
     const category = await Category.create({
       name,
       description,
-      parentId: parentId || null,
       image,
     });
 
@@ -57,14 +55,13 @@ exports.createCategory = async (req, res) => {
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, parentId, image, status } = req.body;
+    const { name, description, image, status } = req.body;
 
     const category = await Category.findById(id);
     if (!category) return response(res, false, "Category not found");
 
     category.name = name || category.name;
     category.description = description || category.description;
-    category.parentId = parentId || null;
     category.image = image || category.image;
     if (typeof status !== "undefined") category.status = status;
 
@@ -86,21 +83,6 @@ exports.deleteCategory = async (req, res) => {
     await category.deleteOne();
 
     return response(res, true, "Category deleted successfully");
-  } catch (error) {
-    return response(res, false, error.message);
-  }
-};
-
-// -------------------- SUBCATEGORY LIST --------------------
-exports.subCategoryList = async (req, res) => {
-  try {
-    const { parentId } = req.params;
-    if (!parentId) return response(res, false, "Parent category ID required");
-
-    const subcategories = await Category.find({ parentId }).sort({ createdAt: -1 });
-    const formatted = subcategories.map((c) => formatCategory(c));
-
-    return response(res, true, "Subcategories fetched successfully", formatted);
   } catch (error) {
     return response(res, false, error.message);
   }
