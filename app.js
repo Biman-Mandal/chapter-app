@@ -20,6 +20,8 @@ const tagRoutes = require("./routes/admin/tagRoutes")
 const bookRoutes = require("./routes/admin/bookRoutes")
 const chapterRoutes = require("./routes/admin/chapterRoutes")
 const reelRoutes = require("./routes/admin/reelRoutes")
+const planRoutes = require("./routes/admin/planRoutes")
+const paymentRoutes = require("./routes/admin/paymentRoutes")
 const app = express();
 app.use(cors());
 
@@ -53,6 +55,8 @@ app.use("/api/admin/tags", tagRoutes)
 app.use("/api/admin/books", bookRoutes)
 app.use("/api/admin/chapters", chapterRoutes)
 app.use("/api/admin/reels", reelRoutes)
+app.use("/api/admin/plans", planRoutes)
+app.use("/api/admin/payments", paymentRoutes)
 // -------------------- 404 Handler -------------------- 
 app.use((req, res, next) => {
   console.warn(`[404] Route not found: ${req.method} ${req.originalUrl}`);
