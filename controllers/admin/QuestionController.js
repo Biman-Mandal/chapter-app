@@ -9,18 +9,32 @@ const attachFilesToOptions = (options = [], files = []) => {
   if (!Array.isArray(options)) return options;
   if (!Array.isArray(files) || files.length === 0) return options;
 
-  // If number of files <= options length, we map by index. Otherwise, we try to match by originalname hint.
+  // Map files by index to provided options. If a file exists for the index, attach as image/video.
   return options.map((opt, idx) => {
     const newOpt = { ...opt };
     const file = files[idx];
     if (file) {
-      // determine if image or video by mimetype
-      if (file.mimetype.startsWith("image/")) {
+      if (file.mimetype && file.mimetype.startsWith("image/")) {
         newOpt.image = `/uploads/${file.filename}`;
+        // clear video if image attached (avoid mixed)
         newOpt.video = newOpt.video || "";
-      } else if (file.mimetype.startsWith("video/")) {
+      } else if (file.mimetype && file.mimetype.startsWith("video/")) {
         newOpt.video = `/uploads/${file.filename}`;
         newOpt.image = newOpt.image || "";
+      }
+    }
+    // normalize tags property on each option
+    if (!Array.isArray(newOpt.tags)) {
+      if (typeof newOpt.tags === "string" && newOpt.tags.trim() !== "") {
+        try {
+          // maybe a JSON stringified array
+          const parsed = JSON.parse(newOpt.tags);
+          newOpt.tags = Array.isArray(parsed) ? parsed : [String(newOpt.tags)];
+        } catch (e) {
+          newOpt.tags = newOpt.tags ? [String(newOpt.tags)] : [];
+        }
+      } else {
+        newOpt.tags = Array.isArray(newOpt.tags) ? newOpt.tags : (newOpt.tags ? [String(newOpt.tags)] : []);
       }
     }
     return newOpt;
@@ -74,16 +88,7 @@ exports.createQuestion = async (req, res) => {
     const files = req.files || [];
     const finalOptions = attachFilesToOptions(options, files);
 
-    // parse tags if present
-    let tags = [];
-    if (payload.tags) {
-      try {
-        tags = typeof payload.tags === "string" ? JSON.parse(payload.tags) : payload.tags;
-      } catch (e) {
-        tags = payload.tags || [];
-      }
-    }
-
+    // ensure each option has tags normalized (attachFilesToOptions already normalizes tags)
     const q = await Question.create({
       title: payload.title,
       description: payload.description || "",
@@ -94,7 +99,7 @@ exports.createQuestion = async (req, res) => {
       order: payload.order ? Number(payload.order) : 0,
       meta: payload.meta ? (typeof payload.meta === "string" ? JSON.parse(payload.meta) : payload.meta) : {},
       createdBy: req.user ? req.user._id : undefined,
-      tags,
+      // tags are now per-option; no top-level tags field
     });
 
     return response(res, true, "Question created successfully", q);
@@ -112,7 +117,7 @@ exports.updateQuestion = async (req, res) => {
     const question = await Question.findById(id);
     if (!question) return response(res, false, "Question not found");
 
-    // parse options if stringified
+    // parse options if provided (stringified or JSON)
     let options = [];
     if (typeof payload.options !== "undefined") {
       try {
@@ -124,20 +129,11 @@ exports.updateQuestion = async (req, res) => {
       options = question.options || [];
     }
 
-    // attach new uploaded files (if any) — map by index of provided options
+    // attach uploaded files (if any)
     const files = req.files || [];
     const finalOptions = attachFilesToOptions(options, files);
 
-    // parse tags if present
-    let tags = question.tags || [];
-    if (typeof payload.tags !== "undefined") {
-      try {
-        tags = typeof payload.tags === "string" ? JSON.parse(payload.tags) : payload.tags;
-      } catch (e) {
-        tags = payload.tags || [];
-      }
-    }
-
+    // update fields
     question.title = payload.title || question.title;
     question.description = typeof payload.description !== "undefined" ? payload.description : question.description;
     question.type = payload.type || question.type;
@@ -147,7 +143,7 @@ exports.updateQuestion = async (req, res) => {
     question.order = typeof payload.order !== "undefined" ? Number(payload.order) : question.order;
     question.meta = payload.meta ? (typeof payload.meta === "string" ? JSON.parse(payload.meta) : payload.meta) : question.meta;
     question.active = typeof payload.active !== "undefined" ? (payload.active === "true" || payload.active === true) : question.active;
-    question.tags = tags;
+    // tags remain on options only
 
     await question.save();
     return response(res, true, "Question updated successfully", question);

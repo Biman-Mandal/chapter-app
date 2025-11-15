@@ -10,6 +10,8 @@ const OptionSchema = new mongoose.Schema(
     video: { type: String, default: "" },
     order: { type: Number, default: 0 },
     meta: { type: mongoose.Schema.Types.Mixed, default: {} },
+    // tags moved to option level - array of tag names
+    tags: { type: [String], default: [] },
   },
   { _id: false }
 );
@@ -32,8 +34,7 @@ const QuestionSchema = new mongoose.Schema(
     meta: { type: mongoose.Schema.Types.Mixed, default: {} },
     active: { type: Boolean, default: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    // tags: store as array of strings (tag names). This keeps backend simple to render without populate.
-    tags: { type: [String], default: [] },
+    // note: tags moved to OptionSchema; no question-level tags field
   },
   { timestamps: true }
 );
