@@ -109,8 +109,18 @@ exports.list = async (req, res) => {
     }
 
     if (author) baseFilter.author = author;
-    if (category && String(category)) {
-      baseFilter.categories = category;
+    if (category) {
+      let categoryArray = category;
+
+      // Ensure it's always an array
+      if (!Array.isArray(categoryArray)) {
+        categoryArray = [categoryArray];
+      }
+
+      // Convert to ObjectId
+      categoryArray = categoryArray.map((c) => new mongoose.Types.ObjectId(c));
+
+      baseFilter.categories = { $in: categoryArray };
     }
 
     // Determine flags
