@@ -25,6 +25,7 @@ const paymentRoutes = require("./routes/admin/paymentRoutes")
 const questionRoutes = require("./routes/question")
 const bookFrontRoutes = require("./routes/book")
 const categoryRoutes = require("./routes/category")
+const reelsRoutes = require("./routes/reels")
 const app = express();
 app.use(cors());
 
@@ -63,6 +64,7 @@ app.use("/api/admin/payments", paymentRoutes)
 app.use("/api/questions", questionRoutes)
 app.use("/api/books", bookFrontRoutes)
 app.use("/api/category", categoryRoutes)
+app.use("/api/reels", reelsRoutes)
 // -------------------- 404 Handler -------------------- 
 app.use((req, res, next) => {
   console.warn(`[404] Route not found: ${req.method} ${req.originalUrl}`);
