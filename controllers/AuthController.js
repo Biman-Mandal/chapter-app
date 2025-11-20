@@ -265,6 +265,7 @@ exports.login = async (req, res) => {
 
     return response(res, true, "Login successful", formatUser(user));
   } catch (error) {
+    console.log(error)
     return response(res, false, error.message);
   }
 };

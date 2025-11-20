@@ -3,10 +3,8 @@ const { softDeletePlugin } = require("../middleware/softDelete");
 
 /**
  * Mongoose schema for PlanSubscription.
- * - features: array of feature strings (primary features)
- * - additionalinfo: array of strings (additional features/info)
  *
- * Mirrors the provided Sequelize schema semantics.
+ * Added field: stripePriceId (string) - the Stripe Price ID used to subscribe a customer to this plan.
  */
 const planSubscriptionSchema = new mongoose.Schema(
   {
@@ -54,6 +52,12 @@ const planSubscriptionSchema = new mongoose.Schema(
     popular: {
       type: Boolean,
       default: false,
+    },
+
+    // The Stripe Price ID associated to this plan (recurring price in Stripe)
+    stripePriceId: {
+      type: String,
+      default: null,
     },
   },
   { timestamps: true }
