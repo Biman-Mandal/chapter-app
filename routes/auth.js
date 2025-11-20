@@ -1,5 +1,5 @@
 const express = require("express");
-const { body } = require("express-validator");
+const { body, query } = require("express-validator");
 const authController = require("../controllers/AuthController");
 const validateRequest = require("../middleware/validateRequest");
 
@@ -54,6 +54,51 @@ router.post(
     body("newPassword")
       .isLength({ min: 8 })
       .withMessage("Password must be at least 8 characters"),
+    validateRequest,
+  ],
+  authController.verifyOtpAndReset
+);
+
+// -------------------- Verify Email --------------------
+// Can be used via GET (link click) or POST (form)
+// POST body: { email, token }
+router.get(
+  "/verify-email",
+  [
+    query("email").isEmail().withMessage("Valid email required"),
+    query("token").notEmpty().withMessage("Token is required"),
+    validateRequest,
+  ],
+  authController.verifyEmail
+);
+
+// -------------------- Resend Verification --------------------
+router.post(
+  "/resend-verification",
+  [
+    body("email").isEmail().withMessage("Valid email required"),
+    validateRequest,
+  ],
+  authController.resendVerification
+);
+
+router.post(
+  "/verify-otp",
+  [
+    body("email")
+      .isEmail()
+      .withMessage("Valid email required"),
+
+    body("otp")
+      .isLength({ min: 6, max: 6 })
+      .withMessage("OTP must be 6 digits")
+      .isNumeric()
+      .withMessage("OTP must contain only numbers"),
+
+    body("newPassword")
+      .isLength({ min: 6 })
+      .withMessage("New password must be at least 6 characters"),
+
     validateRequest,
   ],
   authController.verifyOtpAndReset
