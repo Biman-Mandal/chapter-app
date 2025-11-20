@@ -4,7 +4,19 @@ const Chapter = require("../models/ChapterSchema");
 const User = require("../models/UserSchema");
 const Tag = require("../models/TagSchema");
 const ChapterProgress = require("../models/ChapterProgress");
-const { getUserFromAuthHeader } = require("../utils/authHelper");
+
+// format seconds -> HH:MM:SS
+const formatSeconds = (sec) => {
+  if (!sec || sec <= 0) return "00:00:00";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return [
+    String(h).padStart(2, "0"),
+    String(m).padStart(2, "0"),
+    String(s).padStart(2, "0"),
+  ].join(":");
+};
 
 // uniform response helper
 const response = (res, status, message, data = {}) => {
@@ -59,7 +71,8 @@ const resolveTagNamesFromQuery = async (tagQuery) => {
  *  - page, perPage
  *  - type:
  *      - related_books  => prioritize books matching tags (from tag query or user's chosenTags if token provided)
- *      - book_progress  => include per-book progress summary for requester (if token or guestIdentifier provided)
+ *      - book_progress  => return ONLY books where the authenticated user has progress AND the book is NOT completed (continue reading)
+ *      - completed_books => return ONLY books which the authenticated user has completed
  *      - default listing
  *
  * Response format (uniform):
@@ -83,7 +96,7 @@ exports.list = async (req, res) => {
     const perPageNum = Math.min(Math.max(1, Number(perPage) || 20), 200);
 
     const baseFilter = {};
-    const active = true
+    const active = true;
 
     if (search) {
       const re = new RegExp(search, "i");
@@ -96,18 +109,20 @@ exports.list = async (req, res) => {
     }
 
     if (author) baseFilter.author = author;
-    if (category && mongoose.Types.ObjectId.isValid(String(category))) {
-      baseFilter.categories = mongoose.Types.ObjectId(category);
+    if (category && String(category)) {
+      baseFilter.categories = category;
     }
 
     // Determine flags
     const wantRelated = String(type) === "related_books";
     const wantProgress = String(type) === "book_progress";
+    const wantCompleted = String(type) === "completed_books";
 
     // Resolve requestedTagNames either from query or from user's chosenTags (if token present and related requested)
     let requestedTagNames = await resolveTagNamesFromQuery(tagQuery);
 
-    const authUser = getUserFromAuthHeader(req);
+    // Use auth middleware provided user (req.user). The app routes should ensure auth middleware is used when required.
+    const authUser = req.user || null;
 
     if (wantRelated && requestedTagNames.length === 0 && authUser) {
       const user = await User.findById(authUser.userId).lean();
@@ -118,6 +133,191 @@ exports.list = async (req, res) => {
     }
 
     requestedTagNames = Array.from(new Set((requestedTagNames || []).map((t) => String(t).trim()).filter(Boolean)));
+
+    // If requesting user's progress-related lists, require authentication
+    if ((wantProgress || wantCompleted) && !authUser) {
+      return response(res, false, "Authentication required for this request");
+    }
+
+    // BOOK_PROGRESS flow: return only books where user has progress and the book is not completed
+    if (wantProgress) {
+      const userId = authUser.userId
+
+      // Fetch all progresses for this user
+      const progresses = await ChapterProgress.find({ userId }).lean();
+
+      if (!progresses || progresses.length === 0) {
+        return response(res, true, "Books fetched", { items: [], total: 0, perPage: perPageNum, currentPage: pageNum });
+      }
+
+      // Group progresses by bookId
+      const progressesByBook = new Map();
+      for (const p of progresses) {
+        const bid = String(p.bookId);
+        if (!progressesByBook.has(bid)) progressesByBook.set(bid, []);
+        progressesByBook.get(bid).push(p);
+      }
+
+      const bookIds = Array.from(progressesByBook.keys()).filter((id) => id).map((id) => id);
+      if (bookIds.length === 0) {
+        return response(res, true, "Books fetched", { items: [], total: 0, perPage: perPageNum, currentPage: pageNum });
+      }
+
+      // Fetch chapters for these books
+      const chapters = await Chapter.find({ bookId: { $in: bookIds } }).select("_id bookId duration").lean();
+
+      // build chapters by book map
+      const chaptersByBook = new Map();
+      for (const c of chapters) {
+        const bid = String(c.bookId);
+        if (!chaptersByBook.has(bid)) chaptersByBook.set(bid, []);
+        chaptersByBook.get(bid).push(c);
+      }
+
+      // Decide which books are "not completed" (continue reading): overall percent < 95
+      const candidateBookIds = [];
+      const bookProgressSummary = new Map(); // bookId -> { totalCh, completedCh, percent }
+
+      for (const bidObj of bookIds) {
+        const bid = String(bidObj);
+        const chs = chaptersByBook.get(bid) || [];
+        const totalCh = chs.length;
+
+        // sum percent using user's progresses; missing chapters count as 0
+        const userProgressesForBook = progressesByBook.get(bid) || [];
+        const progressByChapter = new Map();
+        for (const p of userProgressesForBook) progressByChapter.set(String(p.chapterId), p);
+
+        let sumPercent = 0;
+        let completedCh = 0;
+
+        for (const ch of chs) {
+          const p = progressByChapter.get(String(ch._id));
+          if (p) {
+            sumPercent += Number(p.percent || 0);
+            if (p.completed) completedCh++;
+          } else {
+            sumPercent += 0;
+          }
+        }
+
+        const overallPercent = totalCh > 0 ? (sumPercent / (totalCh || 1)) : 0;
+        bookProgressSummary.set(bid, { totalChapters: totalCh, completedChapters: completedCh, percent: Math.round(overallPercent * 100) / 100 });
+
+        // keep only those books with at least one progress and overall percent < 95 (not completed)
+        const hasAnyProgress = (userProgressesForBook && userProgressesForBook.length > 0);
+        if (hasAnyProgress && overallPercent < 95) {
+          candidateBookIds.push(bid);
+        }
+      }
+
+      if (candidateBookIds.length === 0) {
+        return response(res, true, "Books fetched", { items: [], total: 0, perPage: perPageNum, currentPage: pageNum });
+      }
+
+      // Fetch book documents for candidateBookIds
+      const books = await Book.find({ _id: { $in: candidateBookIds }, ...baseFilter }).sort({ [sortBy]: sortOrder === "asc" ? 1 : -1 }).lean();
+
+      // attach progress summary & chapterCount
+      const items = books.map((b) => {
+        const bid = String(b._id);
+        const summary = bookProgressSummary.get(bid) || { totalChapters: 0, completedChapters: 0, percent: 0 };
+        return { ...b, chapterCount: summary.totalChapters || 0, progress: summary };
+      });
+
+      const total = items.length;
+      // paginate items
+      const start = (pageNum - 1) * perPageNum;
+      const slice = items.slice(start, start + perPageNum);
+
+      return response(res, true, "Books fetched (continue reading)", { items: slice, total, perPage: perPageNum, currentPage: pageNum });
+    }
+
+    // COMPLETED_BOOKS flow: return only books which the user has completed reading
+    if (wantCompleted) {
+      const userId = authUser.userId;
+
+      const progresses = await ChapterProgress.find({ userId }).lean();
+      if (!progresses || progresses.length === 0) {
+        return response(res, true, "Books fetched", { items: [], total: 0, perPage: perPageNum, currentPage: pageNum });
+      }
+
+      const progressesByBook = new Map();
+      for (const p of progresses) {
+        const bid = String(p.bookId);
+        if (!progressesByBook.has(bid)) progressesByBook.set(bid, []);
+        progressesByBook.get(bid).push(p);
+      }
+
+      const bookIds = Array.from(progressesByBook.keys()).filter((id) => id).map((id) => id);
+      if (bookIds.length === 0) {
+        return response(res, true, "Books fetched", { items: [], total: 0, perPage: perPageNum, currentPage: pageNum });
+      }
+
+      // Fetch chapters for these books
+      const chapters = await Chapter.find({ bookId: { $in: bookIds } }).select("_id bookId duration").lean();
+
+      const chaptersByBook = new Map();
+      for (const c of chapters) {
+        const bid = String(c.bookId);
+        if (!chaptersByBook.has(bid)) chaptersByBook.set(bid, []);
+        chaptersByBook.get(bid).push(c);
+      }
+
+      const completedBookIds = [];
+      const bookProgressSummary = new Map();
+
+      for (const bidObj of bookIds) {
+        const bid = String(bidObj);
+        const chs = chaptersByBook.get(bid) || [];
+        const totalCh = chs.length;
+
+        const userProgressesForBook = progressesByBook.get(bid) || [];
+        const progressByChapter = new Map();
+        for (const p of userProgressesForBook) progressByChapter.set(String(p.chapterId), p);
+
+        let sumPercent = 0;
+        let completedCh = 0;
+
+        for (const ch of chs) {
+          const p = progressByChapter.get(String(ch._id));
+          if (p) {
+            sumPercent += Number(p.percent || 0);
+            if (p.completed) completedCh++;
+          } else {
+            sumPercent += 0;
+          }
+        }
+
+        const overallPercent = totalCh > 0 ? (sumPercent / (totalCh || 1)) : 0;
+        const rounded = Math.round(overallPercent * 100) / 100;
+        bookProgressSummary.set(bid, { totalChapters: totalCh, completedChapters: completedCh, percent: rounded });
+
+        // Consider book completed if overallPercent >= 95 AND there was at least one progress
+        const hasAnyProgress = (userProgressesForBook && userProgressesForBook.length > 0);
+        if (hasAnyProgress && overallPercent >= 95) {
+          completedBookIds.push(bid);
+        }
+      }
+
+      if (completedBookIds.length === 0) {
+        return response(res, true, "Books fetched", { items: [], total: 0, perPage: perPageNum, currentPage: pageNum });
+      }
+
+      const books = await Book.find({ _id: { $in: completedBookIds }, ...baseFilter }).sort({ [sortBy]: sortOrder === "asc" ? 1 : -1 }).lean();
+
+      const items = books.map((b) => {
+        const bid = String(b._id);
+        const summary = bookProgressSummary.get(bid) || { totalChapters: 0, completedChapters: 0, percent: 0 };
+        return { ...b, chapterCount: summary.totalChapters || 0, progress: summary };
+      });
+
+      const total = items.length;
+      const start = (pageNum - 1) * perPageNum;
+      const slice = items.slice(start, start + perPageNum);
+
+      return response(res, true, "Books fetched (completed)", { items: slice, total, perPage: perPageNum, currentPage: pageNum });
+    }
 
     // If not related prioritization or no tags resolved -> normal DB pagination
     if (!wantRelated || requestedTagNames.length === 0) {
@@ -136,51 +336,6 @@ exports.list = async (req, res) => {
         const out = { ...b, chapterCount: counts[i] || 0, _matchedTags: [] };
         return out;
       });
-
-      // If book_progress requested, and requester present (auth or guestIdentifier), add per-book progress summary
-      if (wantProgress) {
-        const identifier = authUser ? { userId: authUser.userId } : { guestIdentifier: req.query.guestIdentifier || req.header("X-Guest-Identifier") || null };
-        if (identifier.userId || identifier.guestIdentifier) {
-          const bookIds = items.map((it) => it._id);
-          // fetch chapters & progresses for these books
-          const chapters = await Chapter.find({ bookId: { $in: bookIds } }).select("_id bookId duration").lean();
-          const chapIds = chapters.map((c) => c._id);
-          const progressFilter = { chapterId: { $in: chapIds } };
-          if (identifier.userId) progressFilter.userId = identifier.userId;
-          else progressFilter["metadata.userIdentifier"] = identifier.guestIdentifier;
-
-          const progresses = await ChapterProgress.find(progressFilter).lean();
-          // map by bookId
-          const chaptersByBook = new Map();
-          for (const c of chapters) {
-            const bid = String(c.bookId);
-            if (!chaptersByBook.has(bid)) chaptersByBook.set(bid, []);
-            chaptersByBook.get(bid).push(c);
-          }
-          const progressByChapter = new Map();
-          for (const p of progresses) progressByChapter.set(String(p.chapterId), p);
-
-          // compute summary per book
-          items.forEach((it) => {
-            const bid = String(it._id);
-            const chs = chaptersByBook.get(bid) || [];
-            const totalCh = chs.length;
-            let completedCh = 0;
-            let sumPercent = 0;
-            chs.forEach((c) => {
-              const p = progressByChapter.get(String(c._id));
-              if (p) {
-                sumPercent += Number(p.percent || 0);
-                if (p.completed) completedCh++;
-              } else {
-                sumPercent += 0;
-              }
-            });
-            const overallPercent = totalCh > 0 ? Math.round((sumPercent / totalCh) * 100) / 100 : 0;
-            it.progress = { totalChapters: totalCh, completedChapters: completedCh, percent: overallPercent };
-          });
-        }
-      }
 
       return response(res, true, "Books fetched", { items, total, perPage: perPageNum, currentPage: pageNum });
     }
@@ -207,49 +362,6 @@ exports.list = async (req, res) => {
       return { ...b, chapterCount: counts[i] || 0, _matchedTags: matched };
     });
 
-    // if book_progress requested include progress summaries for these page items
-    if (wantProgress) {
-      const identifier = getUserFromAuthHeader(req);
-      const guestIdentifier = identifier ? null : (req.query.guestIdentifier || req.header("X-Guest-Identifier") || null);
-      if (identifier || guestIdentifier) {
-        const bookIds = items.map((it) => it._id);
-        const chapters = await Chapter.find({ bookId: { $in: bookIds } }).select("_id bookId duration").lean();
-        const chapIds = chapters.map((c) => c._id);
-        const progressFilter = { chapterId: { $in: chapIds } };
-        if (identifier) progressFilter.userId = mongoose.Types.ObjectId(identifier.userId);
-        else progressFilter["metadata.userIdentifier"] = guestIdentifier;
-
-        const progresses = await ChapterProgress.find(progressFilter).lean();
-        const chaptersByBook = new Map();
-        for (const c of chapters) {
-          const bid = String(c.bookId);
-          if (!chaptersByBook.has(bid)) chaptersByBook.set(bid, []);
-          chaptersByBook.get(bid).push(c);
-        }
-        const progressByChapter = new Map();
-        for (const p of progresses) progressByChapter.set(String(p.chapterId), p);
-
-        items.forEach((it) => {
-          const bid = String(it._id);
-          const chs = chaptersByBook.get(bid) || [];
-          const totalCh = chs.length;
-          let completedCh = 0;
-          let sumPercent = 0;
-          chs.forEach((c) => {
-            const p = progressByChapter.get(String(c._id));
-            if (p) {
-              sumPercent += Number(p.percent || 0);
-              if (p.completed) completedCh++;
-            } else {
-              sumPercent += 0;
-            }
-          });
-          const overallPercent = totalCh > 0 ? Math.round((sumPercent / totalCh) * 100) / 100 : 0;
-          it.progress = { totalChapters: totalCh, completedChapters: completedCh, percent: overallPercent };
-        });
-      }
-    }
-
     return response(res, true, "Books fetched (related prioritized)", { items, total, perPage: perPageNum, currentPage: pageNum, relatedTags: requestedTagNames });
   } catch (err) {
     console.log(err)
@@ -259,7 +371,7 @@ exports.list = async (req, res) => {
 
 /**
  * GET /api/books/:id
- * Returns book details with chapters. If authenticated (Authorization Bearer) or guestIdentifier provided,
+ * Returns book details with chapters. If authenticated (Authorization Bearer) provided,
  * returns per-chapter progress as well and an overall progress summary.
  */
 exports.getDetails = async (req, res) => {
@@ -272,15 +384,13 @@ exports.getDetails = async (req, res) => {
 
     const chapters = await Chapter.find({ bookId: book._id }).sort({ createdAt: 1 }).lean();
 
-    // identify user or guest
-    const auth = getUserFromAuthHeader(req);
-    const guestIdentifier = auth ? null : (req.query.guestIdentifier || req.header("X-Guest-Identifier") || null);
+    // identify user from auth middleware
+    const auth = req.user || null;
 
     let progressMap = new Map();
-    if (auth || guestIdentifier) {
+    if (auth) {
       const filter = { bookId: book._id, chapterId: { $in: chapters.map((c) => c._id) } };
-      if (auth) filter.userId = mongoose.Types.ObjectId(auth.userId);
-      else filter["metadata.userIdentifier"] = guestIdentifier;
+      filter.userId = auth.userId;
       const progresses = await ChapterProgress.find(filter).lean();
       for (const p of progresses) progressMap.set(String(p.chapterId), p);
     }

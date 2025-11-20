@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 const Chapter = require("../models/ChapterSchema");
 const ChapterProgress = require("../models/ChapterProgress");
-const { getUserFromAuthHeader } = require("../utils/authHelper");
 
 // uniform response helper
 const response = (res, status, message, data = {}) => {
@@ -28,15 +27,18 @@ const parseDurationToSeconds = (d) => {
 /**
  * POST /api/progress
  * Body:
- *  { bookId, chapterId, playedSeconds, durationSeconds? , metadata?: { userIdentifier?: 'guest-abc' } }
+ *  { bookId, chapterId, playedSeconds, durationSeconds? }
  *
  * Behavior:
- *  - Upsert a ChapterProgress record for the user (from token) or guest (metadata.userIdentifier or header X-Guest-Identifier)
+ *  - Upsert a ChapterProgress record for the authenticated user (auth middleware required)
  *  - Compute percent and completed flag (>=95% or playedSeconds >= durationSeconds)
- *  - Return saved progress and guestIdentifier (if guest)
+ *  - Return saved progress
  */
 exports.record = async (req, res) => {
   try {
+    const authUser = req.user;
+    if (!authUser) return response(res, false, "Authentication required");
+
     const { bookId, chapterId } = req.body || {};
     let { playedSeconds = 0, durationSeconds } = req.body || {};
 
@@ -57,29 +59,15 @@ exports.record = async (req, res) => {
     const percent = durationSeconds > 0 ? Math.min(100, (playedSeconds / durationSeconds) * 100) : 0;
     const completed = percent >= 95 || (durationSeconds > 0 && playedSeconds + 1 >= durationSeconds);
 
-    const authUser = getUserFromAuthHeader(req);
-
-    // identify guest identifier
-    let guestIdentifier = null;
-    let metadata = req.body.metadata || {};
-    if (!authUser) {
-      guestIdentifier = metadata.userIdentifier || req.header("X-Guest-Identifier") || req.body.guestIdentifier || null;
-      if (!guestIdentifier) {
-        // generate one and return to client
-        guestIdentifier = require("crypto").randomBytes(12).toString("hex");
-      }
-      metadata.userIdentifier = guestIdentifier;
-    }
-
     const filter = {
         bookId,
-        chapterId
+        chapterId,
+        userId: authUser.userId
     };
-    if (authUser) filter.userId = authUser.userId;
-    else filter["metadata.userIdentifier"] = metadata.userIdentifier;
 
     const update = {
       $set: {
+        userId: authUser.userId,
         playedSeconds,
         durationSeconds,
         percent: Math.round(percent * 100) / 100,
@@ -92,14 +80,11 @@ exports.record = async (req, res) => {
       },
     };
 
-    if (authUser) update.$set.userId = authUser.userId;
-    else update.$set.metadata = { userIdentifier: metadata.userIdentifier };
-
     await ChapterProgress.findOneAndUpdate(filter, update, { upsert: true, setDefaultsOnInsert: true });
 
     const saved = await ChapterProgress.findOne(filter).lean();
 
-    return response(res, true, "Progress recorded", { progress: saved, guestIdentifier: guestIdentifier || null });
+    return response(res, true, "Progress recorded", { progress: saved });
   } catch (err) {
     console.log(err)
     return response(res, false, err.message);
@@ -109,27 +94,21 @@ exports.record = async (req, res) => {
 /**
  * GET /api/progress/book/:bookId
  * Query:
- *   - guestIdentifier (optional for guests) or Authorization Bearer for user
+ *   - authenticated user (auth middleware required)
  * Returns per-chapter progress and overall summary for the specified book for the requester.
  */
 exports.bookProgress = async (req, res) => {
   try {
+    const authUser = req.user;
+    if (!authUser) return response(res, false, "Authentication required");
+
     const { bookId } = req.params;
     if (!bookId) return response(res, false, "bookId required");
-
-    const authUser = getUserFromAuthHeader(req);
-    let guestIdentifier = null;
-    if (!authUser) {
-      guestIdentifier = req.query.guestIdentifier || req.header("X-Guest-Identifier") || null;
-      if (!guestIdentifier) return response(res, false, "guestIdentifier required for unauthenticated requests");
-    }
 
     const chapters = await Chapter.find({ bookId: bookId }).sort({ createdAt: 1 }).lean();
     const chapIds = chapters.map((c) => c._id);
 
-    const filter = { chapterId: { $in: chapIds }, bookId: bookId };
-    if (authUser) filter.userId = authUser.userId;
-    else filter["metadata.userIdentifier"] = guestIdentifier;
+    const filter = { chapterId: { $in: chapIds }, bookId: bookId, userId: authUser.userId };
 
     const progresses = await ChapterProgress.find(filter).lean();
     const progMap = new Map();
