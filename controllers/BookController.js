@@ -382,48 +382,80 @@ exports.getDetails = async (req, res) => {
     const book = await Book.findById(id).populate("categories").lean();
     if (!book) return response(res, false, "Book not found");
 
-    const chapters = await Chapter.find({ bookId: book._id }).sort({ createdAt: 1 }).lean();
+    const chapters = await Chapter.find({ bookId: book._id })
+      .sort({ createdAt: 1 })
+      .lean();
 
-    // identify user from auth middleware
     const auth = req.user || null;
-
     let progressMap = new Map();
+
     if (auth) {
-      const filter = { bookId: book._id, chapterId: { $in: chapters.map((c) => c._id) } };
-      filter.userId = auth.userId;
+      const filter = {
+        userId: auth.userId,
+        bookId: book._id,
+        chapterId: { $in: chapters.map((c) => c._id) },
+      };
+
       const progresses = await ChapterProgress.find(filter).lean();
       for (const p of progresses) progressMap.set(String(p.chapterId), p);
     }
 
+    let totalDurationSeconds = 0;
+
     const chaptersWithProgress = chapters.map((ch) => {
-      const dur = parseDurationToSeconds(ch.duration);
+      const durSec = parseDurationToSeconds(ch.duration);
+      totalDurationSeconds += durSec;
+
       const p = progressMap.get(String(ch._id)) || null;
+
       return {
         ...ch,
-        durationSeconds: dur || (p ? p.durationSeconds : 0),
+        durationSeconds: durSec,
         progress: p
           ? {
               playedSeconds: p.playedSeconds || 0,
-              durationSeconds: p.durationSeconds || 0,
+              durationSeconds: p.durationSeconds || durSec,
               percent: Math.round((p.percent || 0) * 100) / 100,
               completed: !!p.completed,
               updatedAt: p.updatedAt || p.createdAt || null,
             }
-          : { playedSeconds: 0, durationSeconds: dur || 0, percent: 0, completed: false, updatedAt: null },
+          : {
+              playedSeconds: 0,
+              durationSeconds: durSec,
+              percent: 0,
+              completed: false,
+              updatedAt: null,
+            },
       };
     });
 
     const totalChapters = chaptersWithProgress.length;
-    const completedChapters = chaptersWithProgress.filter((c) => c.progress && c.progress.completed).length;
+    const completedChapters = chaptersWithProgress.filter(
+      (c) => c.progress.completed
+    ).length;
+
     const overallPercent = totalChapters
-      ? Math.round((chaptersWithProgress.reduce((sum, c) => sum + (c.progress.percent || 0), 0) / totalChapters) * 100) / 100
+      ? Math.round(
+          (chaptersWithProgress.reduce(
+            (sum, c) => sum + (c.progress.percent || 0),
+            0
+          ) /
+            totalChapters) *
+            100
+        ) / 100
       : 0;
 
     const data = {
       ...book,
       chapters: chaptersWithProgress,
       chapterCount: totalChapters,
-      overallProgress: { totalChapters, completedChapters, percent: overallPercent },
+      totalDurationSeconds,
+      totalDurationFormatted: formatSeconds(totalDurationSeconds), // ← ADDED
+      overallProgress: {
+        totalChapters,
+        completedChapters,
+        percent: overallPercent,
+      },
     };
 
     return response(res, true, "Book details fetched", data);
