@@ -66,6 +66,14 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // New: store chosen tag ids for fast related-book queries
+    chosenTags: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Tag",
+      },
+    ],
   },
   { timestamps: true }
 );

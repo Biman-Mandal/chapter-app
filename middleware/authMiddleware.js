@@ -52,6 +52,7 @@ const authMiddleware = async (req, res, next) => {
     req.userData = user
     next();
   } catch (error) {
+    console.log(error)
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,

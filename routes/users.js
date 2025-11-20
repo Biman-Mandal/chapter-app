@@ -3,6 +3,7 @@ const { body } = require("express-validator");
 const userController = require("../controllers/UserController");
 const authMiddleware = require("../middleware/authMiddleware");
 const validateRequest = require("../middleware/validateRequest"); // Adjust path
+const ProgressController = require("../controllers/ProgressController");
 
 const router = express.Router();
 
@@ -25,7 +26,17 @@ router.put(
   userController.updateProfile
 );
 
-router.post("/question/submit", authMiddleware, userController.submitResponse);
+router.post("/question/submit", userController.submitResponse);
 router.get("/question/me", authMiddleware, userController.myResponses);
+
+
+// POST /api/progress
+// Body: { bookId, chapterId, playedSeconds, durationSeconds?, metadata?: { userIdentifier? } }
+// Returns saved progress and guestIdentifier (if guest)
+router.post("/chapter-progress", authMiddleware, ProgressController.record);
+
+// GET /api/progress/book/:bookId
+// Query: guestIdentifier (for guest) or Authorization Bearer for user
+router.get("/book/:bookId",authMiddleware, ProgressController.bookProgress);
 
 module.exports = router;
